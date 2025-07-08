@@ -184,29 +184,112 @@ def analyze_tweet_against_algorithm(tweet_data):
             })
 
 
-    # 4. Author Analysis (Basic)
-    #    - Check verified status (already in tweet_data if fetched correctly)
-    #    - Link to `tweepcred` concept
-    analysis_results['author_analysis_notes'] = "TODO: Analyze author details (e.g., verified status from tweet_data)."
-    if tweet_data.get('author_verified'):
+    # 4. Author Analysis (Basic) & Deeper Algorithmic Factors
+    #    - Link to `tweepcred` concept, `realgraph`, `user_author_aggregate`
+    #    - Embeddings, Topic Alignment, Safety Flags, Tweet Age
+
+    # Remove old placeholders for these sections
+    if 'author_analysis_notes' in analysis_results:
+        del analysis_results['author_analysis_notes']
+    if 'algorithm_factors_notes' in analysis_results:
+        del analysis_results['algorithm_factors_notes']
+
+    # Author Verified (already covered, but ensure it's in factors)
+    if tweet_data.get('author_verified') and not any("Author is Twitter Verified" in f.get("factor","") for f in analysis_results['factors']):
         analysis_results['factors'].append({
             "factor": "Author is Twitter Verified.",
-            "implication": "Tweets from verified authors receive a score multiplier in the algorithm.",
-            "type": "positive_signal"
+            "implication": "Tweets from verified authors receive a score multiplier (e.g., 2-4x in example configs). This is a direct boost.",
+            "type": "positive_signal_strong"
         })
 
+    # Author Reputation (Tweepcred)
+    analysis_results['factors'].append({
+        "factor": "Author Reputation (e.g., `tweepcred`, `recap.tweetfeature.user_rep`).",
+        "implication": "The algorithm considers author reputation. Higher reputation (built over time via positive engagement and network effects) generally improves visibility. This is used in both Light and Heavy Rankers.",
+        "type": "general_factor_author"
+    })
 
-    # 5. Identify Key Algorithm Factors / Scoring - Iteration 2+
-    #    - Explicitly mention how tweet characteristics map to known positive/negative weights
-    #      (e.g., "This is a reply. Replies that get author engagement are very highly weighted.")
-    analysis_results['algorithm_factors_notes'] = "TODO: Map tweet features directly to known high/low algorithm weights."
+    # Replies & User-Author Interactions
     if tweet_data.get('is_reply'):
+        if not any("This tweet is a reply." in f.get("factor","") for f in analysis_results['factors']): # Avoid duplicate if added earlier
+            analysis_results['factors'].append({
+                "factor": "This tweet is a reply.",
+                "implication": "Replies are a key engagement. Interactions with the original author (e.g., them liking/replying to your reply) are weighted very heavily by the Heavy Ranker (e.g., 'Reply Engaged by Author' ~75.0).",
+                "type": "positive_potential_high_value"
+            })
         analysis_results['factors'].append({
-            "factor": "This tweet is a reply.",
-            "implication": "Replies are a key engagement type. Replies that get engagement *from the original author* are weighted very heavily by the Heavy Ranker. Make your reply insightful, valuable, or engaging to the original poster.",
-            "type": "positive_potential_high_value"
+            "factor": "User-Author Interaction History (e.g., `user_author_aggregate` features).",
+            "implication": "If the viewer has a positive interaction history with the replied-to author, this tweet (reply) is more likely to be ranked higher for that viewer. Past likes, replies, profile clicks between a user and an author matter.",
+            "type": "contextual_factor_viewer_author"
         })
-        analysis_results['recommendations'].append("If this is a reply, aim to add substantial value or ask a pertinent question to encourage author interaction.")
+
+    # RealGraph (Viewer-Author Connection for In-Network)
+    # This is more about how the tweet is ranked for *others* if it's in-network content from this author
+    analysis_results['factors'].append({
+        "factor": "Viewer-Author Graph Connection (e.g., `realgraph` features).",
+        "implication": "For in-network content, the strength of connection (mutual follows, past interactions) between a potential viewer and the tweet's author significantly influences ranking. Tweets from closely connected or frequently interacting authors are prioritized.",
+        "type": "contextual_factor_in_network"
+    })
+
+    # Topic Alignment
+    analysis_results['factors'].append({
+        "factor": "Topic Alignment (e.g., `user_topic_aggregate`, `author-topic_aggregate`).",
+        "implication": "The algorithm tries to match tweets to users' topic interests and also considers an author's typical topics. Content aligned with these is favored. The Heavy Ranker uses many topic-based aggregate features.",
+        "type": "general_factor_content"
+    })
+
+    # Embeddings (Semantic Understanding)
+    analysis_results['factors'].append({
+        "factor": "Semantic Understanding via Embeddings (e.g., TwHIN, SimClusters).",
+        "implication": "The algorithm uses embeddings to understand the meaning of your tweet and its similarity to other users/tweets/topics. Clear, coherent language around specific themes helps the algorithm categorize and recommend your content effectively.",
+        "type": "general_factor_content_advanced"
+    })
+
+    # Tweet Age
+    analysis_results['factors'].append({
+        "factor": "Tweet Age (e.g., `tweet_age_in_secs`).",
+        "implication": "Fresher content is often prioritized, but the algorithm also considers overall engagement and relevance, allowing older tweets to resurface if highly pertinent or engaging.",
+        "type": "general_factor_tweet"
+    })
+
+    # Safety/Spam Flags Connection
+    if tweet_data.get('possibly_sensitive'):
+        analysis_results['factors'].append({
+            "factor": "Tweet flagged as 'Possibly Sensitive' by Twitter.",
+            "implication": "This directly maps to internal safety flags (like `label_nsfw_...`) which can lead to reduced visibility or downranking, and may increase 'Negative Feedback Potential'.",
+            "type": "negative_signal_strong"
+        })
+
+    current_negative_feedback_assessment = engagement_potentials.get('negative_feedback_potential', {}).get('assessment', 'low')
+    if current_negative_feedback_assessment in ['medium', 'high']:
+        if media_info_for_engagement.get("num_hashtags", 0) > 5 or \
+           (media_info_for_engagement.get("num_mentions", 0) > 3 and not tweet_data.get('is_reply')) or \
+           media_info_for_engagement.get("num_links", 0) > 2:
+            analysis_results['factors'].append({
+                "factor": "Potential Spam-like Characteristics (multiple links/hashtags/mentions).",
+                "implication": "These can map to internal spam flags (e.g., `label_spam_flag`) and heavily penalize reach, contributing to 'Negative Feedback Potential'.",
+                "type": "negative_signal_strong"
+            })
+
+    # Recommendations based on deeper factors
+    if any("User-Author Interaction History" in f.get("factor","") for f in analysis_results['factors']) and tweet_data.get('is_reply'):
+        analysis_results['recommendations'].append("When replying, aim for interactions that the original author might find valuable enough to like or reply to, as this is a highly positive signal.")
+
+    if any("Topic Alignment" in f.get("factor","") for f in analysis_results['factors']):
+        analysis_results['recommendations'].append("Consider the topics your content aligns with. Consistency with your profile's theme and relevance to your target audience's interests can improve algorithmic pairing.")
+
+    if any("Semantic Understanding via Embeddings" in f.get("factor","") for f in analysis_results['factors']):
+        analysis_results['recommendations'].append("Use clear and coherent language. This helps the algorithm's embeddings better understand your tweet's meaning and match it to relevant users and topics.")
+
+    if any("Author Reputation" in f.get("factor","") for f in analysis_results['factors']):
+        analysis_results['recommendations'].append("Building a positive author reputation over time (through quality content and genuine engagement) is beneficial for overall visibility.")
+
+    if any("Potential Spam-like Characteristics" in f.get("factor","") for f in analysis_results['factors']):
+        if not any("Review for potentially offensive language" in r for r in analysis_results['recommendations']): # Avoid duplicate generic advice
+            analysis_results['recommendations'].append("Review tweet for elements that might appear spammy (e.g., excessive unrelated hashtags, too many mentions in a non-conversational way, multiple suspicious links) as these can be penalized.")
+
+    if tweet_data.get('possibly_sensitive') and not any("Avoid content that could be flagged as sensitive" in r for r in analysis_results['recommendations']):
+         analysis_results['recommendations'].append("Be mindful of content that Twitter might flag as 'possibly sensitive', as this can reduce reach. Ensure it complies with Twitter's rules.")
 
 
     # Add a general note about algorithm complexity
