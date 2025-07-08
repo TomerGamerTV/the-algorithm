@@ -51,9 +51,21 @@ def display_analysis_report(analysis_results):
             print(f"    Implication: {factor_info.get('implication', '')}")
 
     # Placeholders for future analysis sections
-    if 'engagement_simulation_notes' in analysis_results:
-        print(f"\n[Engagement Simulation Notes]\n  {analysis_results['engagement_simulation_notes']}")
-    if 'author_analysis_notes' in analysis_results:
+    if 'engagement_potential' in analysis_results:
+        print("\n[Engagement Potential Simulation]")
+        ep = analysis_results['engagement_potential']
+        for potential_type, details in ep.items():
+            assessment = details.get('assessment', 'N/A').capitalize()
+            score_info = f" (Score: {details.get('score', 'N/A')})" if 'score' in details else "" # Optional: display score if useful
+            # For this report, we'll focus on assessment and reasons
+            print(f"  {potential_type.replace('_', ' ').capitalize()}: {assessment}")
+            if details.get('reasons'):
+                for reason in details['reasons']:
+                    print(f"    - {reason}")
+            else:
+                print("    - No specific reasons provided.")
+
+    if 'author_analysis_notes' in analysis_results: # Keep other placeholders
          print(f"\n[Author Analysis Notes]\n  {analysis_results['author_analysis_notes']}")
     if 'algorithm_factors_notes' in analysis_results:
         print(f"\n[Algorithm Factors Notes]\n  {analysis_results['algorithm_factors_notes']}")
