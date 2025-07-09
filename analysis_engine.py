@@ -195,19 +195,51 @@ def analyze_tweet_against_algorithm(tweet_data):
         del analysis_results['algorithm_factors_notes']
 
     # Author Verified (already covered, but ensure it's in factors)
-    if tweet_data.get('author_verified') and not any("Author is Twitter Verified" in f.get("factor","") for f in analysis_results['factors']):
+    if tweet_data.get('author_verified'):
+        # Remove any less specific existing versions of this factor before adding the detailed one
+        analysis_results['factors'] = [f for f in analysis_results['factors'] if "Author is Twitter Verified" not in f.get("factor","")]
         analysis_results['factors'].append({
-            "factor": "Author is Twitter Verified.",
-            "implication": "Tweets from verified authors receive a score multiplier (e.g., 2-4x in example configs). This is a direct boost.",
-            "type": "positive_signal_strong"
+            "factor": "Author is Twitter Verified (Blue Badge).",
+            "implication": "Tweets from verified authors receive a significant score multiplier (e.g., 2x for out-of-network, 4x for in-network, as per example `ScoredTweetsParam.scala` configurations). This is a direct and substantial algorithmic boost.",
+            "type": "positive_signal_direct_boost"
         })
 
-    # Author Reputation (Tweepcred)
+    # Creator Status (Conceptual)
     analysis_results['factors'].append({
-        "factor": "Author Reputation (e.g., `tweepcred`, `recap.tweetfeature.user_rep`).",
-        "implication": "The algorithm considers author reputation. Higher reputation (built over time via positive engagement and network effects) generally improves visibility. This is used in both Light and Heavy Rankers.",
-        "type": "general_factor_author"
+        "factor": "Potential 'Creator' Status Boost.",
+        "implication": "The algorithm includes multipliers for accounts identified as 'Creators' (e.g., ~1.1-1.3x from `ScoredTweetsParam.scala`). While this tool can't determine official Creator status, it's often associated with consistent original content creation, audience engagement, and adherence to Twitter's guidelines.",
+        "type": "positive_signal_potential_boost"
     })
+
+    # Author Reputation (Tweepcred)
+    # Find and update the existing factor, or add if it somehow wasn't added (should always be)
+    updated_author_rep = False
+    for factor_item in analysis_results['factors']:
+        if "Author Reputation" in factor_item.get("factor", ""):
+            factor_item["implication"] = (
+                "The algorithm considers author reputation (e.g., `tweepcred` PageRank score, `recap.tweetfeature.user_rep`). "
+                "Higher reputation generally improves visibility and is used in both Light and Heavy Rankers. "
+                "It's influenced by factors such as: the quality and consistency of your tweets, "
+                "the positive engagements your tweets receive (likes, replies, retweets from reputable accounts), "
+                "your network structure (who you follow, who follows you, interactions within your network), "
+                "and how often your account is muted or blocked by others (negative signals)."
+            )
+            factor_item["type"] = "general_factor_author_long_term" # More specific type
+            updated_author_rep = True
+            break
+    if not updated_author_rep: # Should not happen if previous logic is sound
+         analysis_results['factors'].append({
+            "factor": "Author Reputation (e.g., `tweepcred`, `recap.tweetfeature.user_rep`).",
+            "implication": (
+                "The algorithm considers author reputation. Higher reputation generally improves visibility and is used in both Light and Heavy Rankers. "
+                "It's influenced by factors such as: the quality and consistency of your tweets, "
+                "the positive engagements your tweets receive (likes, replies, retweets from reputable accounts), "
+                "your network structure (who you follow, who follows you, interactions within your network), "
+                "and how often your account is muted or blocked by others (negative signals)."
+            ),
+            "type": "general_factor_author_long_term"
+        })
+
 
     # Replies & User-Author Interactions
     if tweet_data.get('is_reply'):
@@ -290,6 +322,24 @@ def analyze_tweet_against_algorithm(tweet_data):
 
     if tweet_data.get('possibly_sensitive') and not any("Avoid content that could be flagged as sensitive" in r for r in analysis_results['recommendations']):
          analysis_results['recommendations'].append("Be mindful of content that Twitter might flag as 'possibly sensitive', as this can reduce reach. Ensure it complies with Twitter's rules.")
+
+    # Recommendations for Author Status
+    if tweet_data.get('author_verified'):
+        analysis_results['recommendations'].append(
+            "Leverage your verified status: This provides a direct algorithmic boost. Continue posting high-quality, engaging content that aligns with your audience's expectations for a verified account."
+        )
+
+    if any("Potential 'Creator' Status Boost" in f.get("factor","") for f in analysis_results['factors']):
+        analysis_results['recommendations'].append(
+            "Aim for 'Creator' characteristics: Consistently create original, valuable content and foster genuine audience engagement. These are often traits of accounts that may receive preferential algorithm treatment as 'creators'."
+        )
+
+    # Refined general recommendation for author reputation, ensuring it's only added once.
+    author_rep_rec_exists = any("Building a strong author reputation" in r for r in analysis_results['recommendations'])
+    if any("Author Reputation" in f.get("factor","") for f in analysis_results['factors']) and not author_rep_rec_exists:
+        analysis_results['recommendations'].append(
+            "Build Author Reputation: This is a long-term strategy. Focus on consistent quality, positive interactions, and growing a healthy network. Avoid behaviors that lead to blocks or mutes."
+        )
 
 
     # Add a general note about algorithm complexity
