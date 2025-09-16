@@ -24,8 +24,18 @@ def display_analysis_report(analysis_results):
         if ta.get('shouting_detected'):
             print("    Warning: High proportion of capital letters (potential 'shouting').")
         print(f"  Basic Sentiment: {ta.get('basic_sentiment', 'N/A')}")
-        if 'notes_on_text_score' in ta:
-            print(f"  Note: {ta['notes_on_text_score']}")
+
+        if 'readability' in ta:
+            readability = ta['readability']
+            print(f"  Readability Assessment: {readability.get('qualitative_assessment', 'N/A')}")
+            print(f"    Avg. Sentence Length: {readability.get('average_sentence_length', 0.0):.1f} words")
+            print(f"    Avg. Word Length: {readability.get('average_word_length', 0.0):.2f} chars")
+            if "notes" in readability and readability["notes"]: # Optional: display notes if needed for debugging, or specific advice from readability
+                 # print(f"    Readability Notes: {readability['notes']}")
+                 pass
+
+        if 'notes_on_text_score' in ta: # Keep this general note
+            print(f"  Note on Text Score: {ta['notes_on_text_score']}")
 
     if 'media_analysis' in analysis_results:
         print("\n[Media & Entities Analysis]")

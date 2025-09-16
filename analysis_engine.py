@@ -19,6 +19,98 @@ SHOUTING_THRESHOLD_CAPS_PERCENTAGE = 0.5 # More than 50% caps might be shouting
 
 # --- Helper Functions ---
 
+def _count_words(text: str) -> int:
+    """Counts words by splitting by space and filtering empty strings."""
+    if not text:
+        return 0
+    return len([word for word in text.split(' ') if word])
+
+def _count_sentences(text: str) -> int:
+    """
+    Counts sentences based on '.', '!', '?' terminators.
+    A simple heuristic, may not be perfect for all cases (e.g., abbreviations).
+    """
+    if not text:
+        return 0
+    sentence_terminators = ['.', '!', '?']
+    count = 0
+    for char_idx, char in enumerate(text):
+        if char in sentence_terminators:
+            # Ensure it's not part of a sequence like "..." or at the very end of text if last char is terminator
+            if char_idx < len(text) - 1 and text[char_idx+1].isspace():
+                 count += 1
+            elif char_idx == len(text) -1: # if it's the last character
+                count +=1
+    return count if count > 0 else 1 # Assume at least one sentence if text exists
+
+def _calculate_average_word_length(text: str, word_count: int) -> float:
+    """Calculates average word length (alphanumeric characters only)."""
+    if word_count == 0:
+        return 0.0
+    # Consider only alphanumeric characters for word length calculation
+    alnum_chars = sum(1 for char in text if char.isalnum())
+    return round(alnum_chars / word_count, 2) if word_count > 0 else 0.0
+
+def calculate_readability_info(text: str) -> dict:
+    """
+    Calculates readability metrics (ASL, AWL) and provides a qualitative assessment.
+    """
+    if not text or not text.strip():
+        return {
+            "average_sentence_length": 0.0,
+            "average_word_length": 0.0,
+            "qualitative_assessment": "N/A (empty text)",
+            "notes": "Text is empty or whitespace only."
+        }
+
+    word_count = _count_words(text)
+    sentence_count = _count_sentences(text)
+
+    asl = round(word_count / sentence_count, 1) if sentence_count > 0 else float(word_count) # Avoid div by zero, treat as one long sentence if no terminators
+    awl = _calculate_average_word_length(text, word_count)
+
+    # Qualitative assessment based on ASL
+    asl_score = 0
+    if asl <= 12: asl_score = 0 # Easy
+    elif asl <= 15: asl_score = 1 # Fairly Easy
+    elif asl <= 20: asl_score = 2 # Average
+    elif asl <= 25: asl_score = 3 # Fairly Difficult
+    else: asl_score = 4 # Difficult
+
+    # Qualitative assessment based on AWL
+    awl_score = 0
+    if awl <= 4.5: awl_score = 0 # Easy
+    elif awl <= 5.0: awl_score = 1 # Fairly Easy
+    elif awl <= 5.5: awl_score = 2 # Average
+    elif awl <= 6.0: awl_score = 3 # Fairly Difficult
+    else: awl_score = 4 # Difficult
+
+    # Combine scores (simple average for now)
+    combined_score = (asl_score + awl_score) / 2.0
+
+    qualitative_assessment = "Average Readability"
+    if combined_score < 0.5: qualitative_assessment = "Very Easy to Read"
+    elif combined_score < 1.5: qualitative_assessment = "Easy to Read"
+    elif combined_score < 2.5: qualitative_assessment = "Fairly Easy to Read" # "Average" will be if combined_score is exactly 2.5
+    elif combined_score < 3.5: qualitative_assessment = "Fairly Difficult to Read"
+    else: qualitative_assessment = "Difficult to Read"
+
+    # Refine assessment if one metric is particularly bad
+    if asl_score >=3 and awl_score >=3 and combined_score < 3.5 : # Both are difficult but avg is not "Difficult"
+        qualitative_assessment = "Difficult to Read (long sentences & long words)"
+    elif asl_score >= 3 and combined_score < 3.0: # Long sentences dominate
+        qualitative_assessment = "Fairly Difficult to Read (long sentences)"
+    elif awl_score >= 3 and combined_score < 3.0: # Long words dominate
+        qualitative_assessment = "Fairly Difficult to Read (complex words)"
+
+
+    return {
+        "average_sentence_length": asl,
+        "average_word_length": awl,
+        "qualitative_assessment": qualitative_assessment,
+        "notes": f"ASL score: {asl_score}, AWL score: {awl_score}, Combined: {combined_score:.2f}"
+    }
+
 def basic_sentiment_analysis(text):
     """
     Performs a very basic sentiment analysis based on keyword matching.
@@ -68,6 +160,10 @@ def analyze_text_characteristics(text):
     # This would involve checking for offensiveness, entropy, readability etc.
     # For now, we'll just note its importance.
     analysis['notes_on_text_score'] = "Light Ranker uses a 'text_score' considering offensiveness, entropy, length, readability. Advanced analysis needed here."
+
+    # Readability Analysis
+    readability_info = calculate_readability_info(text)
+    analysis['readability'] = readability_info
 
     return analysis
 
@@ -339,6 +435,18 @@ def analyze_tweet_against_algorithm(tweet_data):
     if any("Author Reputation" in f.get("factor","") for f in analysis_results['factors']) and not author_rep_rec_exists:
         analysis_results['recommendations'].append(
             "Build Author Reputation: This is a long-term strategy. Focus on consistent quality, positive interactions, and growing a healthy network. Avoid behaviors that lead to blocks or mutes."
+        )
+
+    # Factors and Recommendations based on Readability
+    readability_assessment = text_info_for_engagement.get('readability', {}).get('qualitative_assessment', 'Average Readability')
+    if "Difficult to Read" in readability_assessment or "Fairly Difficult to Read" in readability_assessment:
+        analysis_results['factors'].append({
+            "factor": f"Readability assessed as: {readability_assessment}.",
+            "implication": "Content that is difficult to read may deter engagement, as users might quickly lose interest. The Light Ranker's `text_score` also considers readability.",
+            "type": "content_quality_issue"
+        })
+        analysis_results['recommendations'].append(
+            "Improve Readability: Your tweet's readability is assessed as potentially difficult. Try using simpler language, shorter sentences, or breaking up long paragraphs (if applicable in a thread context) to make it easier for a wider audience to understand and engage with."
         )
 
 
